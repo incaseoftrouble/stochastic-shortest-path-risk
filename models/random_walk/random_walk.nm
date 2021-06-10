@@ -1,0 +1,12 @@
+mdp
+
+const lim = 100;
+
+module value
+  value : [1 .. lim] init 1;
+  [idle] true -> 4/10 : (value'=max(1,value-1)) + 4/10 : (value'=min(lim,value+1)) + 2/10 : (value'=value);
+  [walk] true -> 5/10 : (value'=min(lim,value+1)) + 5/10 : (value'=value);
+  [run] true -> 8/10 : (value'=min(lim,value+4)) + 1/10 : (value'=value) + 1/10 : (value'=1);
+endmodule
+
+label "goal" = value=lim;

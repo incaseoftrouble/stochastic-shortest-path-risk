@@ -1,0 +1,32 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group 'ssp'
+version '1.0'
+
+project.sourceCompatibility = JavaVersion.VERSION_17
+project.targetCompatibility = JavaVersion.VERSION_17
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.google.guava:guava:31.0.1-jre'
+    implementation 'com.google.code.gson:gson:2.8.9'
+    implementation files('lib/gurobi.jar')
+}
+
+application {
+    mainClass = 'ssp_risk.Main'
+}
+
+tasks.withType(JavaCompile) {
+    options.compilerArgs += ['-Xdoclint:none', '-Xlint:none']
+}
+
+test {
+    useJUnitPlatform()
+}

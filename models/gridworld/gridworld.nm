@@ -1,0 +1,56 @@
+// GRID WORLD MODEL OF ROBOT AND JANITOR
+// Based on Hakan Younes/gxn/dxp 04/05/04
+
+mdp
+
+// CONSTANTS
+const int n; // size of the grid
+const double fr; // movement failure probability
+const double jr; // janitor movement probability
+
+const double jd = jr / 4;
+
+formula janitor = ((x = jx) & (y = jy));
+formula obstacle1 = (x = 5) & (1 < y) & (y < 3);
+formula obstacle2 = (x = 2) & (y = 4);
+formula obstacle = obstacle1 | obstacle2;
+
+module collision
+  [move] !janitor & !obstacle -> true;
+  [reset] janitor | obstacle -> true;
+endmodule
+
+module robot
+  x : [1..n] init 1; // x position of robot
+  y : [1..n] init 1; // y position of robot
+
+  [reset] true -> 1 : (x'=1) & (y'=1);
+
+  [move] true -> (1 - fr) : (x'=min(x+1,n))
+               + (fr / 2) : (y'=min(y+1,n))
+               + (fr / 2) : (y'=max(y-1,1));
+  [move] true -> (1 - fr) : (x'=max(x-1,1))
+               + (fr / 2) : (y'=min(y+1,n))
+               + (fr / 2) : (y'=max(y-1,1));
+  [move] true -> (1 - fr) : (y'=min(y+1,n))
+               + (fr / 2) : (x'=min(x+1,n))
+               + (fr / 2) : (x'=max(x-1,1));
+  [move] true -> (1 - fr) : (y'=max(y-1,1))
+               + (fr / 2) : (x'=min(x+1,n))
+               + (fr / 2) : (x'=max(x-1,1));
+endmodule
+
+module janitor
+  jx : [1..n] init n;
+  jy : [1..n] init n;
+
+  [reset] true -> 1 : (jx'=n) & (jy'=n);
+
+  [move] true -> jd : (jx'=min(jx+1,n)) +
+                 jd : (jx'=max(jx-1,1)) +
+                 jd : (jy'=min(jy+1,n)) +
+                 jd : (jy'=max(jy-1,1)) +
+                 (1 - jr) : true;
+endmodule
+
+label "station" = x=n & y=n;
