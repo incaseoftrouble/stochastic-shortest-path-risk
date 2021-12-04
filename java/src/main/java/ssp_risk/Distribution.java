@@ -7,7 +7,6 @@ import java.util.Map;
 import java.util.SortedMap;
 
 public record Distribution(int[] support, double[] probability) {
-
   public static Distribution of(SortedMap<Integer, Double> map) {
     int[] support = new int[map.size()];
     double[] probability = new double[support.length];

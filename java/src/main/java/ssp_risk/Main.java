@@ -42,6 +42,7 @@ public final class Main {
   public static void main(String[] args) throws IOException, GRBException {
     if (args.length != 7) {
       System.out.println("Usage: <tra file> <label file> <goal label> <cost file> <modes: vi,lp> <threshold> <output>");
+      System.exit(1);
     }
 
     String transitionFile = args[0];
@@ -113,42 +114,45 @@ public final class Main {
 
     Stopwatch sspTimer = Stopwatch.createStarted();
 
-    GRBModel sspModel = new GRBModel(env);
-    GRBVar[] sspStateVars = new GRBVar[states];
-    for (int state = 0; state < states; state++) {
-      sspStateVars[state] = sspModel.addVar(0, Double.POSITIVE_INFINITY, -1.0, GRB.CONTINUOUS, "x_" + state);
-    }
-    for (int state = 0; state < mdp.transitions.length; state++) {
-      if (goalStates.contains(state)) {
-        sspModel.addConstr(sspStateVars[state], '=', 0.0, "f_%d".formatted(state));
-      } else {
-        Distribution[] actions = mdp.transitions[state];
-        for (int action = 0; action < actions.length; action++) {
-          Distribution distribution = actions[action];
-          if (distribution == null) {
-            continue;
+    double[] stateSSP = new double[states];
+    Duration sspConstructionTime;
+    //noinspection UnnecessaryCodeBlock
+    {
+      GRBModel sspModel = new GRBModel(env);
+      GRBVar[] sspStateVars = new GRBVar[states];
+      for (int state = 0; state < states; state++) {
+        sspStateVars[state] = sspModel.addVar(0, Double.POSITIVE_INFINITY, -1.0, GRB.CONTINUOUS, "x_" + state);
+      }
+      for (int state = 0; state < mdp.transitions.length; state++) {
+        if (goalStates.contains(state)) {
+          sspModel.addConstr(sspStateVars[state], '=', 0.0, "f_%d".formatted(state));
+        } else {
+          Distribution[] actions = mdp.transitions[state];
+          for (int action = 0; action < actions.length; action++) {
+            Distribution distribution = actions[action];
+            if (distribution == null) {
+              continue;
+            }
+            GRBLinExpr sum = new GRBLinExpr();
+            sum.addConstant(stateCosts[state]);
+            distribution.forEach((s, p) -> sum.addTerm(p, sspStateVars[s]));
+            sspModel.addConstr(sspStateVars[state], '<', sum, "f_%d_%d".formatted(state, action));
           }
-          GRBLinExpr sum = new GRBLinExpr();
-          sum.addConstant(stateCosts[state]);
-          distribution.forEach((s, p) -> sum.addTerm(p, sspStateVars[s]));
-          sspModel.addConstr(sspStateVars[state], '<', sum, "f_%d_%d".formatted(state, action));
         }
       }
-    }
-    Duration sspConstructionTime = sspTimer.elapsed();
+      sspConstructionTime = sspTimer.elapsed();
 
-    sspModel.optimize();
-    double[] stateSSP = new double[states];
-    for (int state = 0; state < states; state++) {
-      stateSSP[state] = sspStateVars[state].get(GRB.DoubleAttr.X);
+      sspModel.optimize();
+      for (int state = 0; state < states; state++) {
+        stateSSP[state] = sspStateVars[state].get(GRB.DoubleAttr.X);
+      }
     }
+    Duration sspTime = sspTimer.stop().elapsed();
     double optimalSsp = stateSSP[mdp.initialState];
     log.log(Level.INFO, "Got optimal SSP {0}", optimalSsp);
 
-    Duration sspTime = sspTimer.stop().elapsed();
-
     @Nullable
-    Result.ValueIterationSolution viSolution;
+    Result.ValueIterationSolution viSolution = null;
     if (modes.contains("vi")) {
       //noinspection ErrorNotRethrown
       try {
@@ -186,15 +190,16 @@ public final class Main {
           Stopwatch iterationStopwatch = Stopwatch.createStarted();
           ParetoSet[] currentSets = sets;
           ParetoSet[] nextSets = new ParetoSet[states];
-          mdp.stateStream().parallel().forEach(state -> {
-            if (goalStates.contains(state)) {
-              nextSets[state] = currentSets[state];
-            } else {
-              ParetoSet set = ParetoSet.combine(currentSets, mdp.transitions[state]);
-              assert ParetoSet.checkCombination(set, currentSets, mdp.transitions[state]);
-              nextSets[state] = set;
-            }
-          });
+          mdp.stateStream().parallel()
+              .forEach(state -> {
+                if (goalStates.contains(state)) {
+                  nextSets[state] = currentSets[state];
+                } else {
+                  ParetoSet set = ParetoSet.combine(currentSets, mdp.transitions[state]);
+                  assert ParetoSet.checkCombination(set, currentSets, mdp.transitions[state]);
+                  nextSets[state] = set;
+                }
+              });
           sets = nextSets;
           log.log(Level.FINE, "Iteration took {0}", new Object[] {iterationStopwatch});
 
@@ -212,7 +217,7 @@ public final class Main {
               bestCVaR[tIndex] = cvar;
               bestVaR[tIndex] = step;
             }
-            if (step > Math.ceil(bestCVaR[tIndex])) {
+            if (step >= Math.ceil(bestCVaR[tIndex])) {
               if (thresholdStopwatches[tIndex].isRunning()) {
                 thresholdStopwatches[tIndex].stop();
               }
@@ -229,16 +234,15 @@ public final class Main {
             tIndex -> new Result.ThresholdResult(bestVaR[tIndex], bestCVaR[tIndex], thresholdStopwatches[tIndex].elapsed())
         ));
         viSolution = new Result.ValueIterationSolution(viTimer.elapsed(), resultMap);
-      } catch (OutOfMemoryError ignored) {
-        log.log(Level.WARNING, "Out of memory during VI");
-        viSolution = null;
+      } catch (OutOfMemoryError e) {
+        log.log(Level.WARNING, "Out of memory during VI", e);
       }
-    } else {
-      viSolution = null;
+      //noinspection CallToSystemGC
+      Runtime.getRuntime().gc();
     }
 
     @Nullable
-    Result.LinearProgrammingSolution lpSolution;
+    Result.LinearProgrammingSolution lpSolution = null;
     if (modes.contains("lp")) {
       //noinspection ErrorNotRethrown
       try {
@@ -310,12 +314,13 @@ public final class Main {
         ));
         lpSolution = new Result.LinearProgrammingSolution(lpTimer.elapsed(), lpReach.elapsed(), lpBuildTimer.elapsed(),
             lpSolveTimer.elapsed(), resultMap);
-      } catch (OutOfMemoryError ignored) {
-        log.log(Level.WARNING, "Out of memory during LP");
-        lpSolution = null;
+      } catch (OutOfMemoryError e) {
+        log.log(Level.WARNING, "Out of memory during LP", e);
+      } catch ( GRBException e) {
+        log.log(Level.WARNING, "Gurobi error during LP", e);
       }
-    } else {
-      lpSolution = null;
+      //noinspection CallToSystemGC
+      Runtime.getRuntime().gc();
     }
 
     Result.SspSolution sspSolution = new Result.SspSolution(sspConstructionTime, sspTime, optimalSsp);

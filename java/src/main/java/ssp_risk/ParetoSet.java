@@ -7,38 +7,48 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NavigableMap;
-import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.stream.IntStream;
+import javax.annotation.Nullable;
 
 public record ParetoSet(double[] p, double[] e) {
-  // Building the Minkowski sum
+  // TODO Navigable map for primitives :-(
 
   public static ParetoSet combine(ParetoSet[] stateSets, Distribution[] distributions) {
+    // Building the Minkowski sum
+
     if (distributions.length == 1 && distributions[0].size() == 1) {
+      // Simple case
       return stateSets[distributions[0].support(0)];
     }
 
+    // Track an approximation of all points that are part of the hull
     NavigableMap<Double, Double> map = new TreeMap<>();
+
     for (Distribution distribution : distributions) {
       int successors = distribution.size();
+      int[] support = distribution.support();
       if (successors == 1) {
-        ParetoSet set = stateSets[distribution.support(0)];
+        ParetoSet set = stateSets[support[0]];
         for (int i = 0; i < set.p.length; i++) {
           insert(map, set.p[i], set.e[i]);
         }
         continue;
       }
 
+      double[] probability = distribution.probability();
       ParetoSet[] sets = new ParetoSet[successors];
+
+      // maxP + minE give the maximal probability / minimal expectation that can be achieved with all successors up to index i
+      // This is used to prune the sum computation
       double[] maxP = new double[successors];
       double[] minE = new double[successors];
       double maxPSum = 0.0;
       double minESum = 0.0;
       for (int index = 0; index < successors; index++) {
-        ParetoSet set = stateSets[distribution.support(index)];
+        ParetoSet set = stateSets[support[index]];
         sets[index] = set;
-        double w = distribution.probability(index);
+        double w = probability[index];
         maxPSum += set.maxP() * w;
         maxP[index] = maxPSum;
         minESum += set.minE() * w;
@@ -46,6 +56,7 @@ public record ParetoSet(double[] p, double[] e) {
       }
 
       int[] indices = new int[successors];
+      // pVector + eVector are partial sums of all successors >= i
       double[] pVector = new double[successors];
       double[] eVector = new double[successors];
 
@@ -60,6 +71,8 @@ public record ParetoSet(double[] p, double[] e) {
   }
 
   private static void insert(NavigableMap<Double, Double> map, double p, double e) {
+    // Insert if this point can be a part of the hull
+    @Nullable
     Map.Entry<Double, Double> entry = map.ceilingEntry(p);
     if (entry == null || e <= entry.getValue()) {
       map.put(p, e);
@@ -67,9 +80,7 @@ public record ParetoSet(double[] p, double[] e) {
   }
 
   private static int increaseCartesianIndices(int start, int[] indices, ParetoSet[] sets) {
-    for (int i = 0; i < start; i++) {
-      indices[i] = 0;
-    }
+    Arrays.fill(indices, 0, 0, start);
 
     int inc = start;
     while (inc < indices.length) {
@@ -99,13 +110,15 @@ public record ParetoSet(double[] p, double[] e) {
       checkP += set.p[setIndex] * weight;
       checkE += set.e[setIndex] * weight;
     }
-    assert Util.doublesEqual(checkP, pVector[0]);
-    assert Util.doublesEqual(checkE, eVector[0]);
+    assert Util.doublesEqual(checkP, pVector[0]) : "Expected %f got %f".formatted(checkP, pVector[0]);
+    assert Util.doublesEqual(checkE, eVector[0]) : "Expected %f got %f".formatted(checkE, eVector[0]);
     return true;
   }
 
   private static boolean updateVector(ParetoSet[] sets, Distribution distribution, int pos, int[] indices,
       double[] pVector, double[] eVector, NavigableMap<Double, Double> map, double[] maxP, double[] minE) {
+    // TODO Reliability of this could be improved by adding Kahan sum or similar
+
     int s = pos;
     while (s >= 0) {
       double w = distribution.probability(s);
@@ -129,6 +142,8 @@ public record ParetoSet(double[] p, double[] e) {
 
   private static int pruneBranch(int s, int[] indices, double[] pVector, double[] eVector,
       double[] maxP, double[] minE, NavigableMap<Double, Double> map, ParetoSet[] sets) {
+    // Branch pruning: If the current partial sum + what the next successors possibly can yield is worse than what is already in the sum
+    // skip the entire branch
     if (s <= 2) {
       return s - 1;
     }
@@ -136,6 +151,7 @@ public record ParetoSet(double[] p, double[] e) {
     double branchMinE = minE[s - 1] + eVector[s];
     Map.Entry<Double, Double> bestEntry = map.ceilingEntry(branchMaxP);
     if (bestEntry != null && branchMinE > bestEntry.getValue()) {
+      // Prune this branch
       return increaseCartesianIndices(s, indices, sets);
     }
     return s - 1;
@@ -145,7 +161,7 @@ public record ParetoSet(double[] p, double[] e) {
 
   public static boolean checkCombination(ParetoSet set, ParetoSet[] stateSets, Distribution[] distributions) {
     ParetoSet simple = combineReference(stateSets, distributions);
-    assert set.similar(simple) : "\nArg: " + set + "\nRef: " + simple;
+    assert set.similar(simple) : "\nImplementation: " + set + "\nReference:      " + simple;
     return true;
   }
 
@@ -203,52 +219,64 @@ public record ParetoSet(double[] p, double[] e) {
   }
 
   public static ParetoSet of(NavigableMap<Double, Double> points) {
-    checkArgument(points.size() >= 1);
-    if (points.size() == 1) {
+    int size = points.size();
+    checkArgument(size >= 1);
+    if (size == 1) {
       Map.Entry<Double, Double> point = Iterables.getOnlyElement(points.entrySet());
       return of(point.getKey(), point.getValue());
     }
 
-    double smallestExpectation = points.values().stream().mapToDouble(Double::doubleValue).min().orElseThrow();
-    Map.Entry<Double, Double> bottomRightEntry = points.entrySet().stream()
-        .filter(entry -> Util.doublesEqual(entry.getValue(), smallestExpectation))
-        .max(Map.Entry.comparingByKey()).orElseThrow();
-    SortedMap<Double, Double> largerPoints = points.tailMap(bottomRightEntry.getKey(), true);
-    Iterator<Map.Entry<Double, Double>> iterator = largerPoints.entrySet().iterator();
+    // Build the pareto frontier in one pass over the sorted points
 
-    int sizeGuess = Math.max(points.size() / 8, 4);
-
+    Iterator<Map.Entry<Double, Double>> iterator = points.entrySet().iterator();
+    Map.Entry<Double, Double> first = iterator.next();
+    int sizeGuess = Math.max(size / 8, 4);
     double[] hullP = new double[sizeGuess];
-    hullP[0] = bottomRightEntry.getKey();
-    double[] hulLE = new double[sizeGuess];
-    hulLE[0] = bottomRightEntry.getValue();
+    hullP[0] = first.getKey();
+    double[] hullE = new double[sizeGuess];
+    hullE[0] = first.getValue();
+    double smallestExpectation = hullE[0];
     int top = 0;
-
     while (iterator.hasNext()) {
-      Map.Entry<Double, Double> next = iterator.next();
-      if (next.getKey() <= hullP[top]) {
-        continue;
-      }
-      while (top >= 1 && (hulLE[top] >= next.getValue()
-          || Util.lessZeroLoose(orientation(hullP[top - 1], hulLE[top - 1], hullP[top], hulLE[top],
-          next.getKey(), next.getValue())))) {
-        top -= 1;
-      }
-      assert hullP[top] < next.getKey() && hulLE[top] <= next.getValue();
+      Map.Entry<Double, Double> entry = iterator.next();
+      double key = entry.getKey();
+      assert hullP[top] < key;
+      double value = entry.getValue();
 
-      top += 1;
-      if (top == hullP.length) {
-        hullP = Arrays.copyOf(hullP, hullP.length * 2);
-        hulLE = Arrays.copyOf(hulLE, hulLE.length * 2);
+      if (Util.lessOrEqual(value, smallestExpectation)) {
+        if (value <= smallestExpectation) {
+          smallestExpectation = value;
+        }
+        // Found a new lowest point, completely reset
+        top = 0;
+        hullP[0] = key;
+        hullE[0] = value;
+      } else {
+        while (top > 0 && (value <= hullE[top]
+            || Util.doubleLessOrEqualZero(orientation(hullP[top - 1], hullE[top - 1], hullP[top], hullE[top], key, value)))) {
+          top -= 1;
+        }
+        assert (hullP[top] < key && hullE[top] <= value);
+
+        if (Util.doublesEqual(key, hullP[top])) {
+          hullP[top] = Math.max(key, hullP[top]);
+          hullE[top] = Math.min(value, hullE[top]);
+        } else {
+          top += 1;
+          if (top == hullP.length) {
+            hullP = Arrays.copyOf(hullP, Math.min(hullP.length * 2, size));
+            hullE = Arrays.copyOf(hullE, Math.min(hullE.length * 2, size));
+          }
+          hullP[top] = key;
+          hullE[top] = value;
+        }
       }
-      hullP[top] = next.getKey();
-      hulLE[top] = next.getValue();
     }
 
     if (hullP.length == top + 1) {
-      return new ParetoSet(hullP, hulLE);
+      return new ParetoSet(hullP, hullE);
     }
-    return new ParetoSet(Arrays.copyOf(hullP, top + 1), Arrays.copyOf(hulLE, top + 1));
+    return new ParetoSet(Arrays.copyOf(hullP, top + 1), Arrays.copyOf(hullE, top + 1));
   }
 
   public static ParetoSet of(double p, double e) {
@@ -263,9 +291,9 @@ public record ParetoSet(double[] p, double[] e) {
     this.e = e;
 
     assert p.length == e.length;
-    assert IntStream.range(0, p.length - 1).allMatch(i -> orientation(p[i], e[i], p[i + 1], e[i + 1], p[i + 2], e[i + 2]) > 0.0) : this;
-    assert IntStream.range(0, p.length).allMatch(i -> p[i] < p[i + 1]) : this;
-    assert IntStream.range(0, p.length).allMatch(i -> e[i + 1] > e[i]) : this;
+    assert IntStream.range(0, p.length - 2).allMatch(i -> orientation(p[i], e[i], p[i + 1], e[i + 1], p[i + 2], e[i + 2]) > 0.0) : this;
+    assert IntStream.range(0, p.length - 1).allMatch(i -> p[i] < p[i + 1]) : this;
+    assert IntStream.range(0, p.length - 1).allMatch(i -> e[i + 1] > e[i]) : this;
   }
 
   public int size() {
@@ -293,6 +321,9 @@ public record ParetoSet(double[] p, double[] e) {
     assert index <= this.p.length;
     if (index == this.p.length) {
       assert p > this.p[this.p.length - 1];
+      if (Util.doublesEqual(p, this.p[this.p.length - 1])) {
+        return this.e[this.p.length - 1];
+      }
       return Double.NaN;
     }
     if (index == 0) {
@@ -338,13 +369,7 @@ public record ParetoSet(double[] p, double[] e) {
   }
 
   private boolean containsPoint(double p, double e) {
-    int i = Arrays.binarySearch(this.p, p);
-    if (i >= 0) {
-      return Util.doublesEqual(this.e[i], e);
-    }
-    int j = -(i + 1);
-    return (j > 0 && Util.doublesEqual(this.p[j - 1], p) && Util.doublesEqual(this.e[j - 1], e))
-        || (j < this.p.length && Util.doublesEqual(this.p[j], p) && Util.doublesEqual(this.e[j], e));
+    return Util.lessOrEqual(bestExpectation(p), e);
   }
 
   public boolean isSimple() {
