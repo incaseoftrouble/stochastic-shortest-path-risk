@@ -4,53 +4,69 @@
 mdp
 
 // CONSTANTS
-const int n; // size of the grid
+const int xm; // x size of the grid
+const int ym; // x size of the grid
 const double fr; // movement failure probability
-const double jr; // janitor movement probability
+const double jr; // janitor direction change probability
 
-const double jd = jr / 4;
+// Bounding box of the janitor
+const int jx_min;
+const int jx_max;
+const int jy_min;
+const int jy_max;
 
-formula janitor = ((x = jx) & (y = jy));
-formula obstacle1 = (x = 5) & (1 < y) & (y < 3);
-formula obstacle2 = (x = 2) & (y = 4);
+formula janitor = ((x - jx) <= 1 & (jx - x) <= 1) & ((y - jy) <= 1 & (jy - y) <= 1);
+formula obstacle1 = (x = jx_max) & (y = jy_max - 2);
+formula obstacle2 = (x = jx_max - 3) & (y = jy_max - 1);
 formula obstacle = obstacle1 | obstacle2;
 
 module collision
-  [move] !janitor & !obstacle -> true;
-  [reset] janitor | obstacle -> true;
+  [move] !obstacle -> true;
+  [reset] obstacle -> true;
 endmodule
 
 module robot
-  x : [1..n] init 1; // x position of robot
-  y : [1..n] init 1; // y position of robot
+  x : [1..xm] init 1; // x position of robot
+  y : [1..ym] init 1; // y position of robot
 
-  [reset] true -> 1 : (x'=1) & (y'=1);
-
-  [move] true -> (1 - fr) : (x'=min(x+1,n))
-               + (fr / 2) : (y'=min(y+1,n))
-               + (fr / 2) : (y'=max(y-1,1));
-  [move] true -> (1 - fr) : (x'=max(x-1,1))
-               + (fr / 2) : (y'=min(y+1,n))
-               + (fr / 2) : (y'=max(y-1,1));
-  [move] true -> (1 - fr) : (y'=min(y+1,n))
-               + (fr / 2) : (x'=min(x+1,n))
-               + (fr / 2) : (x'=max(x-1,1));
-  [move] true -> (1 - fr) : (y'=max(y-1,1))
-               + (fr / 2) : (x'=min(x+1,n))
-               + (fr / 2) : (x'=max(x-1,1));
+  [reset] true -> (x'=1) & (y'=1);
+  [move] !janitor ->
+               (1 - fr) : (x'=min(x+1,xm)) +
+               (fr / 2) : (y'=min(y+1,ym)) +
+               (fr / 2) : (y'=max(y-1,1));
+  [move] !janitor -> 
+               (1 - fr) : (x'=max(x-1,1)) +
+               (fr / 2) : (y'=min(y+1,ym)) +
+               (fr / 2) : (y'=max(y-1,1));
+  [move] !janitor -> 
+               (1 - fr) : (y'=min(y+1,ym)) +
+               (fr / 2) : (x'=min(x+1,xm)) +
+               (fr / 2) : (x'=max(x-1,1));
+  [move] !janitor -> 
+               (1 - fr) : (y'=max(y-1,1)) +
+               (fr / 2) : (x'=min(x+1,xm)) +
+               (fr / 2) : (x'=max(x-1,1));
+  [move] janitor -> true;
 endmodule
 
 module janitor
-  jx : [1..n] init n;
-  jy : [1..n] init n;
+  jx : [jx_min..jx_max] init jx_max;
+  jy : [jy_min..jy_max] init jy_max;
+  d : [0..3] init 2;
 
-  [reset] true -> 1 : (jx'=n) & (jy'=n);
+  [reset] true -> 1 : (jx'=jx_max) & (jy'=jy_max) & (d'=2);
 
-  [move] true -> jd : (jx'=min(jx+1,n)) +
-                 jd : (jx'=max(jx-1,1)) +
-                 jd : (jy'=min(jy+1,n)) +
-                 jd : (jy'=max(jy-1,1)) +
-                 (1 - jr) : true;
+  [move] d = 0 & jy < jy_max -> (1-jr) : (jy'=jy+1) + (jr/2) : (d'=1) + (jr/2) : (d'=3);
+  [move] d = 0 & jy = jy_max -> 1 : (d'=2); // + 1/4 : (d'=1) + 1/4 : (d'=3);
+
+  [move] d = 1 & jx < jx_max -> (1-jr) : (jx'=jx+1) + (jr/2) : (d'=0) + (jr/2) : (d'=2);
+  [move] d = 1 & jx = jx_max -> 1 : (d'=3); // + 1/4 : (d'=0) + 1/4 : (d'=2);
+
+  [move] d = 2 & jy > jy_min -> (1-jr) : (jy'=jy-1) + (jr/2) : (d'=1) + (jr/2) : (d'=3);
+  [move] d = 2 & jy = jy_min -> 1 : (d'=0); // + 1/4 : (d'=1) + 1/4 : (d'=3);
+
+  [move] d = 3 & jx > jx_min -> (1-jr) : (jx'=jx-1) + (jr/2) : (d'=0) + (jr/2) : (d'=2);
+  [move] d = 3 & jx = jx_min -> 1 : (d'=1); // + 1/4 : (d'=0) + 1/4 : (d'=2);
 endmodule
 
-label "station" = x=n & y=n;
+label "station" = x=xm & y=ym;

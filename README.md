@@ -3,13 +3,13 @@
 ## Building
 
  - Install docker on your machine
- - Run `docker -t ssp .` in the directory where the code is extracted. (If you have Gurobi 9.1 and Java version >= 16 installed, you can also run the code directly on your machine by replicating the steps from the Dockerfile.)
- - Obtain a WLS licence from Gurobi (see https://license.gurobi.com/ , free for academic use)
- - Save the `gurobi.lic` somewhere
+ - Run `docker build -t ssp .` in the directory where the code is extracted.
+   If you have Gurobi 9.1 and Java version >= 17 installed, you can also run the code directly on your machine by replicating the steps from the Dockerfile.
+ - Obtain a WLS licence from Gurobi (see https://license.gurobi.com/, free for academic use) and save the `gurobi.lic` somewhere
 
 ## Running
 
- - To run a `command`, execute `docker run -it -v <path to gurobi.lic>:/opt/gurobi/gurobi.lic ssp <command>`
+ - To run a `command`, execute `docker run -it -v <path to gurobi.lic>:/opt/gurobi/gurobi.lic bin/ssp-cvar <command>`
  - Optional: When running experiments, also add `-v <some path>:/app/output` to the docker call to obtain the output files on your machine.
    So, the complete command is
    ```
@@ -27,14 +27,22 @@
 
 Run the following commands for the respective models:
 
- - Grid5: `bin/ssp-cvar models/gridworld/grid5.tra models/gridworld/grid5.lab station reach lp 0.1 output/grid5.json`
- - Grid20: `bin/ssp-cvar models/gridworld/grid20.tra models/gridworld/grid20.lab station reach vi 0.1 output/grid20.json`
- - FireWire: `bin/ssp-cvar models/firewire/firewire.tra models/firewire/firewire.lab absorbing reach vi 0.1 output/firewire.json`
- - WLAN: `bin/ssp-cvar models/wlan/wlan2.tra models/wlan/wlan2.lab absorbing reach vi 0.1 output/wlan.json`
+ - Grid5: `bin/ssp-cvar models/gridworld/gridworld.5.p.tra models/gridworld/gridworld.5.p.lab station reach lp 0.10 output/gridworld.5.p.json`
+ - Grid20: `bin/ssp-cvar models/gridworld/gridworld.20.d.tra models/gridworld/gridworld.20.d.lab station reach vi 0.10 output/gridworld.20.d.json`
+ - FireWire: `bin/ssp-cvar models/firewire/firewire.tra models/firewire/firewire.lab absorbing reach vi 0.10 output/firewire.json`
+ - WLAN: `bin/ssp-cvar models/wlan/wlan2.tra models/wlan/wlan2.lab absorbing reach vi,lp 0.10 output/wlan.json`
+ - Walk: `bin/ssp-cvar models/random_walk/random_walk.tra models/random_walk/random_walk.lab goal reach vi,lp range:0.01,0.1,19 output/walk-multi.json`
+
+We have excluded the variants which time out, to include them simply change `vi` / `lp` to `vi,lp` in the respective commands.
+To view the results, simply open the created JSON files.
+
+Run `python3 eval.py figure walk-multi.json` to output a CSV for the different threshold performances.
+
+By increasing the logging level of Java's default logging facility, further details of the computation can be viewed.
 
 ## Modifying
 
- - The `sources.tar.gz` contain all sources of our implementation (both Java as well as a python prototype).
+ - The `sources.tar.gz` contain all sources of our implementation (both Java and a python prototype).
    In fact, the binary executed in the evaluation is compiled from the contained sources.
    If you want to modify the sources, simply re-package the `sources.tar.gz` and re-build the docker image.
  - The models are written in the PRISM modelling language.
@@ -43,3 +51,4 @@ Run the following commands for the respective models:
    prism <model>.nm -exportmodel .all -const <constants>
    ```
    This produces (among others) the required `.tra` and `.lab` files.
+   The constants we used to create the models can be found in the `.const` files in each model folder.

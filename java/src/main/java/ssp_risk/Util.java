@@ -1,8 +1,8 @@
 package ssp_risk;
 
 public final class Util {
-  private static final double EPS = 1.0e-12;
-  private static final double LOOSE = 1.0e-8;
+  private static final double EPS = 1.0e-14;
+  private static final double LOOSE = 1.0e-6;
 
   private Util() {
   }
@@ -30,8 +30,10 @@ public final class Util {
     return d < EPS;
   }
 
-  public static boolean lessOrEqual(double d1, double d2) {
-    return d1 <= d2 + EPS;
+  public static boolean doublesLessOrEqual(double d1, double d2) {
+    return d1 - d2 <= EPS;
   }
-
+  public static boolean doublesLessOrEqualLoose(double d1, double d2) {
+    return d1 - d2 <= LOOSE;
+  }
 }

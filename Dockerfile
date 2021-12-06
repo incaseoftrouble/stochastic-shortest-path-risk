@@ -27,6 +27,7 @@ COPY --from=gurobi /opt/gurobi /opt/gurobi
 COPY --from=gradle /opt/java/build/distributions/ssp-cvar-1.0.tar /app/
 COPY --from=gradle /opt/LICENCE /app/LICENCE
 COPY --from=gradle /opt/models /app/models
+COPY --from=gradle /opt/python /app/
 WORKDIR /app
 RUN tar -xvf ssp-cvar-1.0.tar --strip-components=1 \
     && rm ssp-cvar-1.0.tar

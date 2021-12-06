@@ -23,8 +23,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
-import java.util.IntSummaryStatistics;
+import java.util.LongSummaryStatistics;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -143,13 +144,18 @@ public final class Main {
       sspConstructionTime = sspTimer.elapsed();
 
       sspModel.optimize();
+      int status = sspModel.get(GRB.IntAttr.Status);
+      if (status != GRB.Status.OPTIMAL) {
+        log.log(Level.SEVERE, "Could not solve SSP LP, status: {0}", new Object[] {status});
+        System.exit(1);
+      }
       for (int state = 0; state < states; state++) {
         stateSSP[state] = sspStateVars[state].get(GRB.DoubleAttr.X);
       }
     }
     Duration sspTime = sspTimer.stop().elapsed();
     double optimalSsp = stateSSP[mdp.initialState];
-    log.log(Level.INFO, "Got optimal SSP {0}", optimalSsp);
+    log.log(Level.INFO, "Got optimal SSP {0} after {1}", new Object[] {optimalSsp, sspTimer});
 
     @Nullable
     Result.ValueIterationSolution viSolution = null;
@@ -176,17 +182,6 @@ public final class Main {
 
         int step = 1;
         while (step <= Math.ceil(bestCVaR[0])) {
-          if (log.isLoggable(Level.FINE)) {
-            IntSummaryStatistics statistics = Arrays.stream(sets)
-                .filter(p -> !p.isSimple())
-                .mapToInt(ParetoSet::size)
-                .summaryStatistics();
-            log.log(Level.FINE, "VI iteration {0}; {1} points; {2} non-trivial sets with {3} avg, {4} max points",
-                new Object[] {step,
-                    Arrays.stream(sets).mapToInt(ParetoSet::size).sum(),
-                    statistics.getCount(), statistics.getAverage(), statistics.getMax()});
-          }
-
           Stopwatch iterationStopwatch = Stopwatch.createStarted();
           ParetoSet[] currentSets = sets;
           ParetoSet[] nextSets = new ParetoSet[states];
@@ -195,14 +190,25 @@ public final class Main {
                 if (goalStates.contains(state)) {
                   nextSets[state] = currentSets[state];
                 } else {
-                  ParetoSet set = ParetoSet.combine(currentSets, mdp.transitions[state]);
-                  assert ParetoSet.checkCombination(set, currentSets, mdp.transitions[state]);
-                  nextSets[state] = set;
+                  ParetoSet combination = ParetoSet.combine(currentSets, mdp.transitions[state]);
+                  // assert ParetoSet.checkCombination(combination.set(), currentSets, mdp.transitions[state]);
+                  nextSets[state] = combination;
                 }
               });
           sets = nextSets;
-          log.log(Level.FINE, "Iteration took {0}", new Object[] {iterationStopwatch});
+          if (log.isLoggable(Level.FINE)) {
+            LongSummaryStatistics sizeStats = Arrays.stream(sets)
+                .filter(p -> !p.isSimple())
+                .mapToLong(ParetoSet::size)
+                .summaryStatistics();
+            log.log(Level.FINE, ("VI iteration %d took %s; %d points, %d non-trivial sets with %.2f avg, %d max points").formatted(
+                step, iterationStopwatch, Arrays.stream(sets).mapToLong(ParetoSet::size).sum(),
+                sizeStats.getCount(),
+                sizeStats.getCount() == 0 ? 0 : sizeStats.getAverage(),
+                sizeStats.getCount() == 0 ? 0 : sizeStats.getMax()));
+          }
 
+          Map<Integer, Double> improvedThresholds = new HashMap<>();
           for (int tIndex = 0; tIndex < thresholds.length; tIndex++) {
             double threshold = thresholds[tIndex];
             double expectation = sets[mdp.initialState].bestExpectation(1.0 - threshold);
@@ -210,10 +216,9 @@ public final class Main {
               continue;
             }
             double cvar = step + expectation / threshold;
-            checkState(cvar >= optimalSsp);
+            checkState(Util.doublesLessOrEqual(optimalSsp, cvar));
             if (cvar < bestCVaR[tIndex]) {
-              log.log(Level.INFO, "Improving best CVaR from {0} to {1} for {2}, guess {3}",
-                  new Object[] {bestCVaR[tIndex], cvar, threshold, step});
+              improvedThresholds.put(tIndex, bestCVaR[tIndex]);
               bestCVaR[tIndex] = cvar;
               bestVaR[tIndex] = step;
             }
@@ -222,6 +227,13 @@ public final class Main {
                 thresholdStopwatches[tIndex].stop();
               }
             }
+          }
+          if (!improvedThresholds.isEmpty() && log.isLoggable(Level.INFO)) {
+            String updates = improvedThresholds.entrySet().stream()
+                .sorted(Comparator.comparingDouble(e -> thresholds[e.getKey()]))
+                .map(entry -> "%.3f: %.3f -> %.3f".formatted(thresholds[entry.getKey()], entry.getValue(), bestCVaR[entry.getKey()]))
+                .collect(Collectors.joining(", "));
+            log.log(Level.INFO, "Guess {0} improved CVaR: {1}", new Object[] {step, updates});
           }
 
           step += 1;
@@ -285,7 +297,7 @@ public final class Main {
             cvarModel.optimize();
             lpSolveTimer.stop();
             iterationTimer.stop();
-            log.log(Level.FINE, "Iteration took {0}", new Object[] {iterationTimer});
+            log.log(Level.FINE, "LP iteration took {0}", new Object[] {iterationTimer});
 
             int status = cvarModel.get(GRB.IntAttr.Status);
             checkState(status != GRB.Status.USER_OBJ_LIMIT);
@@ -316,11 +328,22 @@ public final class Main {
             lpSolveTimer.elapsed(), resultMap);
       } catch (OutOfMemoryError e) {
         log.log(Level.WARNING, "Out of memory during LP", e);
-      } catch ( GRBException e) {
+      } catch (GRBException e) {
         log.log(Level.WARNING, "Gurobi error during LP", e);
       }
       //noinspection CallToSystemGC
       Runtime.getRuntime().gc();
+    }
+
+    if (viSolution != null && lpSolution != null) {
+      for (double threshold : thresholds) {
+        Result.ThresholdResult viResult = viSolution.results().get(threshold);
+        Result.ThresholdResult lpResult = lpSolution.results().get(threshold);
+        if (!Util.doublesEqual(viResult.cvar(), lpResult.cvar())) {
+          log.log(Level.INFO, "Difference for threshold %f, LP: %.6f, VI: %.6f, delta: %g"
+              .formatted(threshold, lpResult.cvar(), viResult.cvar(), Math.abs(lpResult.cvar() - viResult.cvar())));
+        }
+      }
     }
 
     Result.SspSolution sspSolution = new Result.SspSolution(sspConstructionTime, sspTime, optimalSsp);

@@ -1,2 +1,5 @@
-n=20,jr=1.0,fr=0.00
-n=6,jr=1.0,fr=0.05
+xm=05,ym=05,jx_min=00,jx_max=05,jy_min=1,jy_max=5,jr=0.05,fr=0.00
+// xm=10,ym=05,jx_min=03,jx_max=08,jy_min=1,jy_max=5,jr=0.05,fr=0.00
+xm=15,ym=05,jx_min=10,jx_max=15,jy_min=1,jy_max=5,jr=0.05,fr=0.00
+// xm=20,ym=05,jx_min=15,jx_max=20,jy_min=1,jy_max=5,jr=0.05,fr=0.00
+xm=25,ym=05,jx_min=15,jx_max=20,jy_min=1,jy_max=5,jr=0.05,fr=0.00

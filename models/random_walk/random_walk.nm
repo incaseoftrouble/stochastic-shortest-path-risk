@@ -1,6 +1,6 @@
 mdp
 
-const lim = 100;
+const int lim;
 
 module value
   value : [1 .. lim] init 1;
