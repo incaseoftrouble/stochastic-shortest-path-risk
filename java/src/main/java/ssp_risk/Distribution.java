@@ -5,6 +5,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.SortedMap;
+import java.util.stream.IntStream;
 
 public record Distribution(int[] support, double[] probability) {
   public static Distribution of(SortedMap<Integer, Double> map) {
@@ -49,11 +50,7 @@ public record Distribution(int[] support, double[] probability) {
   }
 
   public double sum(double[] values) {
-    double sum = 0.0;
-    for (int i = 0; i < support.length; i++) {
-      sum += values[support[i]] * probability[i];
-    }
-    return sum;
+    return IntStream.range(0, support.length).mapToDouble(i -> values[support[i]] * probability[i]).sum();
   }
 
   public int support(int key) {

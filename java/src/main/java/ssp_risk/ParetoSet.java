@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Objects;
 import java.util.PriorityQueue;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public record ParetoSet(double[] p, double[] e) {
@@ -93,26 +94,34 @@ public record ParetoSet(double[] p, double[] e) {
         double eSum = IntStream.range(0, successors).mapToDouble(i -> sets[i].e[positions[i]] * probability[i]).sum();
         assert Util.doublesLessOrEqual(p[pos], pSum);
         if (pSum <= p[pos]) {
-          // This could happen due to float imprecision in the sum
+          // This could happen due to float imprecision in the sum, but should not be too large
+          assert Util.doublesEqual(pSum, p[pos]);
           e[pos] = Math.min(e[pos], eSum);
         } else {
-          if (pos < 2 || orientation(p[pos - 1], e[pos - 1], p[pos], e[pos], pSum, eSum) > 0.0) {
-            // Discard co-linear points
-            pos += 1;
+          while (pos >= 0 && e[pos] >= eSum) {
+            pos -= 1;
           }
+          while (pos >= 2 && (orientation(p[pos - 1], e[pos - 1], p[pos], e[pos], pSum, eSum) <= 0.0)) {
+            pos -= 1;
+          }
+
+          pos += 1;
           p[pos] = pSum;
           e[pos] = eSum;
         }
       }
       assert priorities.isEmpty();
+      assert pos < segments;
 
       sizes[action] = pos + 1;
       ps[action] = p;
       es[action] = e;
 
       assert isConvex(p, e, pos + 1) : "Not convex:\n%s\n%s".formatted(Arrays.toString(p), Arrays.toString(e));
-      assert isIncreasing(p, pos + 1) && isIncreasing(e, pos + 1)
-          : "Consistency error:\n%s\n%s".formatted(Arrays.toString(p), Arrays.toString(e));
+      assert isIncreasing(p, pos + 1) : "P not increasing: "
+          + Arrays.stream(p).limit(pos + 1).mapToObj(Double::toString).collect(Collectors.joining(" "));
+      assert isIncreasing(e, pos + 1) : "E not increasing: "
+          + Arrays.stream(e).limit(pos + 1).mapToObj(Double::toString).collect(Collectors.joining(" "));
     }
 
     int[] indices = new int[actions];
@@ -127,11 +136,10 @@ public record ParetoSet(double[] p, double[] e) {
       queue.add(first);
     }
 
-    int size = Arrays.stream(sizes).sum();
-    int sizeGuess = Math.max(size / 8, 4);
-    double[] hullP = new double[sizeGuess];
+    int size = Arrays.stream(sizes).sum() + 1;
+    double[] hullP = new double[size];
     hullP[0] = ps[first][0];
-    double[] hullE = new double[sizeGuess];
+    double[] hullE = new double[size];
     hullE[0] = es[first][0];
     double smallestExpectation = hullE[0];
     int top = 0;
@@ -141,8 +149,7 @@ public record ParetoSet(double[] p, double[] e) {
       double e = es[a][indices[a]];
       assert hullP[top] <= p;
 
-      //noinspection FloatingPointEquality
-      if (hullP[top] == p) {
+      if (p <= hullP[top]) {
         // This can happen if multiple successors have, e.g. pSum = 0.0
         // Since the queue sorts accordingly, we can skip these cases
         assert hullE[top] <= e;
@@ -158,10 +165,6 @@ public record ParetoSet(double[] p, double[] e) {
         }
         assert (hullP[top] < p && hullE[top] <= e);
         top += 1;
-        if (top == hullP.length) {
-          hullP = Arrays.copyOf(hullP, Math.min(hullP.length * 2, size));
-          hullE = Arrays.copyOf(hullE, Math.min(hullE.length * 2, size));
-        }
         hullP[top] = p;
         hullE[top] = e;
       }

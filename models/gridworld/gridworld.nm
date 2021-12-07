@@ -16,8 +16,8 @@ const int jy_min;
 const int jy_max;
 
 formula janitor = ((x - jx) <= 1 & (jx - x) <= 1) & ((y - jy) <= 1 & (jy - y) <= 1);
-formula obstacle1 = (x = jx_max) & (y = jy_max - 2);
-formula obstacle2 = (x = jx_max - 3) & (y = jy_max - 1);
+formula obstacle1 = (x = jx_max) & (y = jy_max - 1);
+formula obstacle2 = (x = jx_max - 2) & (y = jy_max - 2);
 formula obstacle = obstacle1 | obstacle2;
 
 module collision
@@ -34,19 +34,19 @@ module robot
                (1 - fr) : (x'=min(x+1,xm)) +
                (fr / 2) : (y'=min(y+1,ym)) +
                (fr / 2) : (y'=max(y-1,1));
-  [move] !janitor -> 
+  [move] !janitor ->
                (1 - fr) : (x'=max(x-1,1)) +
                (fr / 2) : (y'=min(y+1,ym)) +
                (fr / 2) : (y'=max(y-1,1));
-  [move] !janitor -> 
+  [move] !janitor ->
                (1 - fr) : (y'=min(y+1,ym)) +
                (fr / 2) : (x'=min(x+1,xm)) +
                (fr / 2) : (x'=max(x-1,1));
-  [move] !janitor -> 
+  [move] !janitor ->
                (1 - fr) : (y'=max(y-1,1)) +
                (fr / 2) : (x'=min(x+1,xm)) +
                (fr / 2) : (x'=max(x-1,1));
-  [move] janitor -> true;
+  [move] true -> true;
 endmodule
 
 module janitor
@@ -57,16 +57,16 @@ module janitor
   [reset] true -> 1 : (jx'=jx_max) & (jy'=jy_max) & (d'=2);
 
   [move] d = 0 & jy < jy_max -> (1-jr) : (jy'=jy+1) + (jr/2) : (d'=1) + (jr/2) : (d'=3);
-  [move] d = 0 & jy = jy_max -> 1 : (d'=2); // + 1/4 : (d'=1) + 1/4 : (d'=3);
+  [move] d = 0 & jy = jy_max -> 1/2 : (d'=2) + 1/4 : (d'=1) + 1/4 : (d'=3);
 
   [move] d = 1 & jx < jx_max -> (1-jr) : (jx'=jx+1) + (jr/2) : (d'=0) + (jr/2) : (d'=2);
-  [move] d = 1 & jx = jx_max -> 1 : (d'=3); // + 1/4 : (d'=0) + 1/4 : (d'=2);
+  [move] d = 1 & jx = jx_max -> 1/2 : (d'=3) + 1/4 : (d'=0) + 1/4 : (d'=2);
 
   [move] d = 2 & jy > jy_min -> (1-jr) : (jy'=jy-1) + (jr/2) : (d'=1) + (jr/2) : (d'=3);
-  [move] d = 2 & jy = jy_min -> 1 : (d'=0); // + 1/4 : (d'=1) + 1/4 : (d'=3);
+  [move] d = 2 & jy = jy_min -> 1/2 : (d'=0) + 1/4 : (d'=1) + 1/4 : (d'=3);
 
   [move] d = 3 & jx > jx_min -> (1-jr) : (jx'=jx-1) + (jr/2) : (d'=0) + (jr/2) : (d'=2);
-  [move] d = 3 & jx = jx_min -> 1 : (d'=1); // + 1/4 : (d'=0) + 1/4 : (d'=2);
+  [move] d = 3 & jx = jx_min -> 1/2 : (d'=1) + 1/4 : (d'=0) + 1/4 : (d'=2);
 endmodule
 
 label "station" = x=xm & y=ym;

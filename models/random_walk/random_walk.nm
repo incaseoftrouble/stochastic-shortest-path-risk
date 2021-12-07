@@ -1,11 +1,13 @@
 mdp
 
 const int lim;
+const int fails;
 
-module value
-  value : [1 .. lim] init 1;
-  [forward] true -> 1/2 : (value'=min(lim,value+1)) + 1/2 : (value'=value);
-  [run] true -> 9/10 : (value'=min(lim,value + 5)) + 1/10 : (value'=1);
+module sys
+  pos : [1 .. lim] init 1;
+  fail : [0 .. fails] init 1;
+  [] true -> 1/2 : (pos'=min(lim,pos+1)) + 1/2 : true;
+  [] fail < fails -> 9/10 : (pos'=min(lim,pos * 2)) + 1/10 : (pos'=ceil(pos / 2)) & (fail'=fail+1);
 endmodule
 
-label "goal" = value=lim;
+label "goal" = pos=lim;

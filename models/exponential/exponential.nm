@@ -1,0 +1,29 @@
+mdp
+
+const int n;
+const int k;
+const double p;
+
+module sys
+  pos : [0 .. n] init 0;
+  fail : [0 .. 1] init 0;
+  part : [0 .. 5] init 0; // 0: top, 1: decision, 2: bot k+2, 3: single, 4: bot 2k+1, 5: goal
+  bot : [1 .. 2*k + 1] init 1;
+
+  [] (part = 0) & (pos < n) -> p : (pos'=pos+1) + (1-p) : (pos'=pos+1) & (fail'=min(fail+1,1));
+  [] (part = 0) & (pos = n) & (fail=0) -> 1 : (pos'=0) & (part'=1);
+  [] (part = 0) & (pos = n) & (fail=1) -> 1 : (pos'=0) & (fail'=0);
+
+  [] (part = 1) -> 1 : (part'=2);
+  [] (part = 1) -> 1/2 : (part'=3) + 1/2 : (part'=4);
+
+  [] (part = 2) & (bot < k + 2) -> 1 : (bot'=bot + 1);
+  [] (part = 2) & (bot = k + 2) -> 1 : (bot'=1) & (part'=5);
+
+  [] (part = 3) -> 1 : (part'=5);
+
+  [] (part = 4) & (bot < 2*k + 1) -> 1 : (bot'=bot+1);
+  [] (part = 4) & (bot = 2*k + 1) -> 1 : (bot'=1) & (part'=5);
+endmodule
+
+label "goal" = part=5;

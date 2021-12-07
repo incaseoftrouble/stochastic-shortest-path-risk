@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.LongSummaryStatistics;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -51,21 +52,32 @@ public final class Main {
     String goalLabel = args[2];
     String costs = args[3];
     Set<String> modes = Set.of(args[4].split(","));
-    double[] thresholds;
-    if (args[5].startsWith("range:")) {
-      String[] rangeData = args[5].substring("range:".length()).split(",");
-      double rangeStart = Double.parseDouble(rangeData[0]);
-      double rangeEnd = Double.parseDouble(rangeData[1]);
-      int rangeCount = Integer.parseInt(rangeData[2]);
-      checkArgument(rangeCount >= 2);
-      thresholds = new double[rangeCount];
-      for (int i = 0; i < rangeCount; i++) {
-        thresholds[i] = rangeStart + (rangeEnd - rangeStart) / (rangeCount - 1) * i;
+    Set<Double> thresholdSet = new TreeSet<>();
+    String[] thresholdSpecs = args[5].split("\\|");
+    for (String threshold : thresholdSpecs) {
+      if (threshold.startsWith("range:")) {
+        String[] rangeData = threshold.substring("range:".length()).split(",");
+        double rangeStart = Double.parseDouble(rangeData[0]);
+        double rangeEnd = Double.parseDouble(rangeData[1]);
+        int rangeCount = Integer.parseInt(rangeData[2]);
+        checkArgument(rangeCount >= 2);
+        for (int i = 0; i < rangeCount; i++) {
+          thresholdSet.add(rangeStart + (rangeEnd - rangeStart) / (rangeCount - 1) * i);
+        }
+      } else if (threshold.startsWith("logrange:")) {
+        String[] rangeData = threshold.substring("logrange:".length()).split(",");
+        double rangeStart = Double.parseDouble(rangeData[0]);
+        double rangeEnd = Double.parseDouble(rangeData[1]);
+        int rangeCount = Integer.parseInt(rangeData[2]);
+        checkArgument(rangeCount >= 2);
+        for (int i = 0; i < rangeCount; i++) {
+          thresholdSet.add(StrictMath.pow(10, rangeStart + (rangeEnd - rangeStart) / (rangeCount - 1) * i));
+        }
+      } else {
+        thresholdSet.add(Double.parseDouble(threshold));
       }
-      assert Util.doublesEqual(thresholds[rangeCount - 1], rangeEnd);
-    } else {
-      thresholds = new double[] {Double.parseDouble(args[5])};
     }
+    double[] thresholds = thresholdSet.stream().mapToDouble(Double::doubleValue).sorted().toArray();
     String outputFile = args[6];
 
     Result.InputData inputData = new Result.InputData(Path.of(transitionFile).getFileName().toString(), args);
@@ -230,7 +242,7 @@ public final class Main {
           }
           if (!improvedThresholds.isEmpty() && log.isLoggable(Level.INFO)) {
             String updates = improvedThresholds.entrySet().stream()
-                .sorted(Comparator.comparingDouble(e -> thresholds[e.getKey()]))
+                .sorted(Comparator.comparingDouble(e -> -thresholds[e.getKey()]))
                 .map(entry -> "%.3f: %.3f -> %.3f".formatted(thresholds[entry.getKey()], entry.getValue(), bestCVaR[entry.getKey()]))
                 .collect(Collectors.joining(", "));
             log.log(Level.INFO, "Guess {0} improved CVaR: {1}", new Object[] {step, updates});
