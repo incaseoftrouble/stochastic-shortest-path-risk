@@ -129,7 +129,6 @@ public final class Main {
 
     double[] stateSSP = new double[states];
     Duration sspConstructionTime;
-    //noinspection UnnecessaryCodeBlock
     {
       GRBModel sspModel = new GRBModel(env);
       GRBVar[] sspStateVars = new GRBVar[states];
@@ -197,6 +196,7 @@ public final class Main {
           Stopwatch iterationStopwatch = Stopwatch.createStarted();
           ParetoSet[] currentSets = sets;
           ParetoSet[] nextSets = new ParetoSet[states];
+
           mdp.stateStream().parallel()
               .forEach(state -> {
                 if (goalStates.contains(state)) {
