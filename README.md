@@ -4,7 +4,7 @@
 
  - Install docker on your machine
  - Run `docker build -t ssp .` in the directory where the code is extracted.
-   If you have Gurobi 9.1 and Java version >= 17 installed, you can also run the code directly on your machine by replicating the steps from the Dockerfile.
+   If you have Gurobi 9.5.1 and Java version >= 17 installed, you can also run the code directly on your machine by replicating the steps from the Dockerfile.
  - Obtain a WLS licence from Gurobi (see https://license.gurobi.com/, free for academic use) and save the `gurobi.lic` somewhere
 
 ## Running
@@ -27,15 +27,15 @@
 
 Run the following commands for the respective models:
 
- - Grid4: `bin/ssp-cvar models/gridworld/gridworld.04.d.tra models/gridworld/gridworld.04.d.lab station reach lp,vi 0.10 output/gridworld.04.json`
- - Grid8: `bin/ssp-cvar models/gridworld/gridworld.08.d.tra models/gridworld/gridworld.08.d.lab station reach lp,vi 0.10 output/gridworld.08.json`
- - Grid16: `bin/ssp-cvar models/gridworld/gridworld.16.d.tra models/gridworld/gridworld.16.d.lab station reach lp,vi 0.10 output/gridworld.16.json`
- - Grid32: `bin/ssp-cvar models/gridworld/gridworld.32.d.tra models/gridworld/gridworld.32.d.lab station reach vi 0.10 output/gridworld.32.json`
- - FireWire: `bin/ssp-cvar models/firewire/firewire.tra models/firewire/firewire.lab absorbing reach vi 0.10 output/firewire.json`
- - WLAN: `bin/ssp-cvar models/wlan/wlan2.tra models/wlan/wlan2.lab absorbing reach vi,lp 0.10 output/wlan.json`
- - Walk: `bin/ssp-cvar models/random_walk/random_walk.tra models/random_walk/random_walk.lab goal reach vi "range:0.001,0.1,100|logrange:-7,-3,100" output/walk-multi.json`
+ - Grid4: `bin/ssp-cvar -m models/gridworld/gridworld.04 --goal station --method LP,VI -t 0.10 -o output/gridworld.04.json`
+ - Grid8: `bin/ssp-cvar -m models/gridworld/gridworld.08.d --goal station --method LP,VI -t 0.10 -o output/gridworld.08.json`
+ - Grid16: `bin/ssp-cvar -m models/gridworld/gridworld.16.d --goal station --method LP,VI -t 0.10 -o output/gridworld.16.json`
+ - Grid32: `bin/ssp-cvar -m models/gridworld/gridworld.32.d --goal station --method VI -t 0.10 -o output/gridworld.32.json`
+ - FireWire: `bin/ssp-cvar -m models/firewire/firewire --goal absorbing --method VI -t 0.10 -o output/firewire.json`
+ - WLAN: `bin/ssp-cvar -m models/wlan/wlan2 --goal absorbing --method LP,VI -t 0.10 -o output/wlan.json`
+ - Walk: `bin/ssp-cvar -m models/random_walk/random_walk --goal goal --method VI -t "range:0.001,0.1,100|logrange:-7,-3,100" -o output/walk-multi.json`
 
-We have excluded the variants which time out or run out of memory, to include them simply change `vi` / `lp` to `vi,lp` in the respective commands.
+Variants which time out or run out of memory are excluded, to include them simply change `VI` / `LP` to `VI,LP` in the respective commands.
 To view the results, simply open the created JSON files.
 
 Run `python3 eval.py walk-multi.json` to output a CSV for the different threshold performances.

@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Objects;
 import java.util.PriorityQueue;
+import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -25,10 +26,12 @@ public record ParetoSet(double[] p, double[] e) {
     return IntStream.range(0, limit - 1).allMatch(i -> Util.doublesLessOrEqual(x[i], x[i + 1]));
   }
 
-  public static ParetoSet combine(ParetoSet[] stateSets, Distribution[] distributions) {
+  public static ParetoSet combine(IntFunction<IntFunction<ParetoSet>> stateSets, Distribution[] distributions, int[] costs) {
     int actions = distributions.length;
     if (actions == 1 && distributions[0].size() == 1) {
-      return stateSets[distributions[0].support(0)];
+      int cost = costs[0];
+      IntFunction<ParetoSet> successorSetFunction = stateSets.apply(cost);
+      return successorSetFunction == null ? null : successorSetFunction.apply(distributions[0].support(0));
     }
 
     // For each action, the points in the Minkowski sum
@@ -42,9 +45,13 @@ public record ParetoSet(double[] p, double[] e) {
       Distribution distribution = distributions[action];
       int successors = distribution.size();
       int[] support = distribution.support();
+      IntFunction<ParetoSet> successorSetFunction = stateSets.apply(costs[action]);
+      if (successorSetFunction == null) {
+        continue;
+      }
 
       if (successors == 1) {
-        ParetoSet set = stateSets[support[0]];
+        ParetoSet set = successorSetFunction.apply(support[0]);
         ps[action] = set.p;
         es[action] = set.e;
         continue;
@@ -57,7 +64,7 @@ public record ParetoSet(double[] p, double[] e) {
 
       double[] probability = distribution.probability();
       ParetoSet[] sets = new ParetoSet[successors];
-      Arrays.setAll(sets, i -> stateSets[support[i]]);
+      Arrays.setAll(sets, i -> successorSetFunction.apply(support[i]));
 
       // Segment indices for each of the considered successors
       int[] positions = new int[successors];
@@ -77,9 +84,9 @@ public record ParetoSet(double[] p, double[] e) {
       // Summed segments
       int segments = Arrays.stream(sets).mapToInt(ParetoSet::size).sum() - sets.length + 1;
       double[] p = new double[segments];
-      p[0] = IntStream.range(0, successors).mapToDouble(i -> sets[i].p[0] * probability[i]).sum();
+      p[0] = Util.sum(0, successors, i -> sets[i].p[0] * probability[i]);
       double[] e = new double[segments];
-      e[0] = IntStream.range(0, successors).mapToDouble(i -> sets[i].e[0] * probability[i]).sum();
+      e[0] = Util.sum(0, successors, i -> sets[i].e[0] * probability[i]);
 
       int pos = 0;
       for (int r = 1; r < segments; r++) {
@@ -90,8 +97,8 @@ public record ParetoSet(double[] p, double[] e) {
           priorities.add(index);
         }
 
-        double pSum = IntStream.range(0, successors).mapToDouble(i -> sets[i].p[positions[i]] * probability[i]).sum();
-        double eSum = IntStream.range(0, successors).mapToDouble(i -> sets[i].e[positions[i]] * probability[i]).sum();
+        double pSum = Util.sum(0, successors, i -> sets[i].p[positions[i]] * probability[i]);
+        double eSum = Util.sum(0, successors, i -> sets[i].e[positions[i]] * probability[i]);
         assert Util.doublesLessOrEqual(p[pos], pSum);
         if (pSum <= p[pos]) {
           // This could happen due to float imprecision in the sum, but should not be too large
@@ -127,9 +134,11 @@ public record ParetoSet(double[] p, double[] e) {
     int[] indices = new int[actions];
     PriorityQueue<Integer> queue = new PriorityQueue<>(actions,
         Comparator.<Integer>comparingDouble(a -> ps[a][indices[a]]).thenComparingDouble(a -> es[a][indices[a]]));
-    IntStream.range(0, actions).forEach(queue::add);
+    IntStream.range(0, actions).filter(a -> ps[a] != null).forEach(queue::add);
+    if (queue.isEmpty()) {
+      return null;
+    }
 
-    assert !queue.isEmpty();
     int first = queue.poll();
     indices[first] += 1;
     if (indices[first] < sizes[first]) {
@@ -207,6 +216,10 @@ public record ParetoSet(double[] p, double[] e) {
 
   public int size() {
     return p.length;
+  }
+
+  public double bestProbability() {
+    return this.p[this.p.length - 1];
   }
 
   public double bestExpectation(double p) {

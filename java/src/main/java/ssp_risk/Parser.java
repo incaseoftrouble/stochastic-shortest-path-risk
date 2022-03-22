@@ -2,7 +2,6 @@ package ssp_risk;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSetMultimap;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.SetMultimap;
@@ -10,12 +9,15 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -88,27 +90,64 @@ public final class Parser {
         int action = entry.getKey();
         SortedMap<Integer, Double> actionTransitions = entry.getValue();
         if (!actionTransitions.isEmpty()) {
+          assert Util.doublesEqual(actionTransitions.values().stream().mapToDouble(Double::doubleValue).sum(), 1.0d) :
+              "Invalid distribution in state %d action %d: %g".formatted(state, action,
+                  Math.abs(1.0d - actionTransitions.values().stream().mapToDouble(Double::doubleValue).sum()));
           transitionArray[state][action] = Distribution.of(actionTransitions);
         }
       }
     }
 
-    return new MDP(initialState, transitionArray);
+    Set<Integer> reachable = new HashSet<>(List.of(initialState));
+    Queue<Integer> queue = new ArrayDeque<>(reachable);
+    while (!queue.isEmpty()) {
+      int state = queue.poll();
+      for (Distribution distribution : transitionArray[state]) {
+        for (int s : distribution.support()) {
+          if (reachable.add(s)) {
+            queue.add(s);
+          }
+        }
+      }
+    }
+    return new MDP(initialState, transitionArray, reachable);
   }
 
   public static Map<Integer, Integer> parseStateRewards(Path stateRewardsPath) throws IOException {
-    ImmutableMap.Builder<Integer, Integer> rewards = ImmutableMap.builder();
+    Map<Integer, Integer> rewards = new HashMap<>();
     try (BufferedReader rewardReader = Files.newBufferedReader(stateRewardsPath)) {
       rewardReader.readLine();
-      rewardReader.lines().map(String::strip).filter(string -> !string.isEmpty()).map(string -> string.split(" ")).forEach(row -> {
-        checkArgument(row.length == 2);
-        int state = Integer.parseInt(row[0]);
-        int reward = Integer.parseInt(row[1]);
-        checkArgument(reward >= 0);
-        rewards.put(state, reward);
-      });
+      rewardReader.lines().map(String::strip)
+          .filter(string -> !string.isEmpty())
+          .map(string -> string.split(" "))
+          .peek(row -> checkArgument(row.length == 2))
+          .forEach(row -> {
+            int state = Integer.parseInt(row[0]);
+            int reward = Integer.parseInt(row[1]);
+            checkArgument(reward >= 0);
+            rewards.put(state, reward);
+          });
     }
-    return rewards.build();
+    return rewards;
+  }
+
+  public static Map<Integer, Map<Integer, Integer>> parseActionRewards(Path actionRewardsPath) throws IOException {
+    Map<Integer, Map<Integer, Integer>> rewards = new HashMap<>();
+    try (BufferedReader rewardReader = Files.newBufferedReader(actionRewardsPath)) {
+      rewardReader.readLine();
+      rewardReader.lines().map(String::strip)
+          .filter(string -> !string.isEmpty())
+          .map(string -> string.split(" "))
+          .peek(row -> checkArgument(row.length == 3))
+          .forEach(row -> {
+            int state = Integer.parseInt(row[0]);
+            int action = Integer.parseInt(row[1]);
+            int reward = Integer.parseInt(row[2]);
+            checkArgument(reward >= 0, "Illegal transition reward %d for state %d, action %d", reward, state, action);
+            rewards.computeIfAbsent(state, k -> new HashMap<>()).put(action, reward);
+          });
+    }
+    return rewards;
   }
 
   public static Set<Integer> getAbsorbingStates(MDP mdp) {

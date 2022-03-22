@@ -17,7 +17,7 @@ public record Distribution(int[] support, double[] probability) {
       probability[index] = entry.getValue();
       index += 1;
     }
-    checkArgument(Util.doublesEqual(Arrays.stream(probability).sum(), 1.0));
+    assert Util.doublesEqual(Arrays.stream(probability).sum(), 1.0) : "Invalid distribution " + Arrays.stream(probability).sum();
     return new Distribution(support, probability);
   }
 
